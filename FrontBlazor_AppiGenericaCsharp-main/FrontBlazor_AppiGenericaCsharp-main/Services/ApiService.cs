@@ -27,26 +27,36 @@ namespace FrontBlazor_AppiGenericaCsharp.Services
         // LISTAR: GET /api/{tabla}
         // Devuelve la lista de registros como diccionarios
         // ──────────────────────────────────────────────
+
         public async Task<List<Dictionary<string, object?>>> ListarAsync(string tabla, int? limite = null)
         {
             try
             {
-                // Hace GET a la API y obtiene la respuesta como JSON
                 string url = $"/api/{tabla}";
                 if (limite.HasValue)
                     url += $"?limite={limite.Value}";
 
-                var respuesta = await _http.GetFromJsonAsync<JsonElement>(url, _jsonOptions);
+                // 1. Primero obtenemos la respuesta completa, no solo el JSON
+                var respuestaHttp = await _http.GetAsync(url);
+
+                // 2. Si la API dice que no hay contenido (204), devolvemos lista vacía sin error
+                if (respuestaHttp.StatusCode == System.Net.HttpStatusCode.NoContent)
+                {
+                    return new List<Dictionary<string, object?>>();
+                }
+
+                // 3. Si hay contenido, leemos el JSON manualmente
+                var jsonCuerpo = await respuestaHttp.Content.ReadFromJsonAsync<JsonElement>(_jsonOptions);
 
                 // Extrae la propiedad "datos" de la respuesta
-                if (respuesta.TryGetProperty("datos", out JsonElement datos))
+                if (jsonCuerpo.TryGetProperty("datos", out JsonElement datos))
                 {
                     return ConvertirDatos(datos);
                 }
 
                 return new List<Dictionary<string, object?>>();
             }
-            catch (HttpRequestException ex)
+            catch (Exception ex) // Cambiamos a Exception para atrapar cualquier error de lectura
             {
                 Console.WriteLine($"Error al listar {tabla}: {ex.Message}");
                 return new List<Dictionary<string, object?>>();
@@ -88,13 +98,15 @@ namespace FrontBlazor_AppiGenericaCsharp.Services
         // Envia los campos a modificar como JSON
         // ──────────────────────────────────────────────
         public async Task<(bool exito, string mensaje)> ActualizarAsync(
-            string tabla, string nombreClave, string valorClave,
+            string tabla, string nombreClave, object valorClave,
             Dictionary<string, object?> datos,
             string? camposEncriptar = null)
         {
             try
             {
-                string url = $"/api/{tabla}/{nombreClave}/{valorClave}";
+                // Convertimos el valorClave a string aqui para la URL
+                string url = $"/api/{tabla}/{nombreClave}/{valorClave?.ToString()}";
+
                 if (!string.IsNullOrEmpty(camposEncriptar))
                     url += $"?camposEncriptar={camposEncriptar}";
 
@@ -102,14 +114,14 @@ namespace FrontBlazor_AppiGenericaCsharp.Services
                 var contenido = await respuesta.Content.ReadFromJsonAsync<JsonElement>(_jsonOptions);
 
                 string mensaje = contenido.TryGetProperty("mensaje", out JsonElement msg)
-                    ? msg.GetString() ?? "Operacion completada."
-                    : "Operacion completada.";
+                    ? msg.GetString() ?? "Operación completada."
+                    : "Operación completada.";
 
                 return (respuesta.IsSuccessStatusCode, mensaje);
             }
             catch (HttpRequestException ex)
             {
-                return (false, $"Error de conexion: {ex.Message}");
+                return (false, $"Error de conexión: {ex.Message}");
             }
         }
 
@@ -118,23 +130,25 @@ namespace FrontBlazor_AppiGenericaCsharp.Services
         // Solo necesita la clave primaria para identificar el registro
         // ──────────────────────────────────────────────
         public async Task<(bool exito, string mensaje)> EliminarAsync(
-            string tabla, string nombreClave, string valorClave)
+            string tabla, string nombreClave, object valorClave)
         {
             try
             {
+                // Convertimos el valorClave a string aqui para la URL
                 var respuesta = await _http.DeleteAsync(
-                    $"/api/{tabla}/{nombreClave}/{valorClave}");
+                    $"/api/{tabla}/{nombreClave}/{valorClave?.ToString()}");
+
                 var contenido = await respuesta.Content.ReadFromJsonAsync<JsonElement>(_jsonOptions);
 
                 string mensaje = contenido.TryGetProperty("mensaje", out JsonElement msg)
-                    ? msg.GetString() ?? "Operacion completada."
-                    : "Operacion completada.";
+                    ? msg.GetString() ?? "Operación completada."
+                    : "Operación completada.";
 
                 return (respuesta.IsSuccessStatusCode, mensaje);
             }
             catch (HttpRequestException ex)
             {
-                return (false, $"Error de conexion: {ex.Message}");
+                return (false, $"Error de conexión: {ex.Message}");
             }
         }
 
